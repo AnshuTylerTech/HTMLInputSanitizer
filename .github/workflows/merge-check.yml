@@ -1,0 +1,53 @@
+name: pre-merge-checks
+
+on:
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      name: Checkout Code
+      with:
+        fetch-depth: 0
+    - uses: hashicorp/setup-terraform@v1
+      name: Setup Terraform
+      with:
+        cli_config_credentials_token: ${{ secrets.TERRAFORM_REGISTRY_ACCESS }}
+    - name: Setup Terraform docs
+      # TODO: Convert this to an action for caching
+      shell: bash
+      run: |
+        mkdir -p $HOME/terraform-docs/bin
+        echo "$HOME/terraform-docs/bin" >> $GITHUB_PATH
+        cd $HOME/terraform-docs/bin && \
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" \
+          -sLJfO "https://github.com/terraform-docs/terraform-docs/releases/download/${terraform_docs_version}/terraform-docs-${terraform_docs_version}-linux-amd64.tar.gz" && \
+        tar -zxf terraform-docs-${terraform_docs_version}-linux-amd64.tar.gz && \
+        chmod +x "$HOME/terraform-docs/bin/terraform-docs"
+      env:
+        terraform_docs_version: v0.15.0
+    - uses: terraform-linters/setup-tflint@v1.0.7
+      name: Setup TFLint
+      with:
+        tflint_version: v0.30.0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Setup TFSec
+      # TODO: Convert this to an action for caching
+      shell: bash
+      run: |
+        mkdir -p $HOME/tfsec/bin
+        echo "$HOME/tfsec/bin" >> $GITHUB_PATH
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/octet-stream" -sLJf "https://github.com/tfsec/tfsec/releases/download/$tfsec_version/tfsec-linux-amd64" -o $HOME/tfsec/bin/tfsec > /dev/null
+        chmod +x "$HOME/tfsec/bin/tfsec"
+      env:
+        tfsec_version: v0.56.0
+    - uses: actions/setup-python@v2
+    - name: Terraform Init
+      run: make tf/init-all
+    - uses: pre-commit/action@v2.0.3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
